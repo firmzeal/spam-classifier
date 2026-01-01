@@ -17,62 +17,126 @@ def clean_text(text):
     return text
 
 # -----------------------
-# Page title
+# Page layout
 # -----------------------
-st.title("📧 Spam Message Classifier")
-st.write("Type a message and the AI will tell you if it's Spam or Not Spam.")
+st.set_page_config(page_title="📧 Spam Classifier", layout="wide")
 
 # -----------------------
-# Check if model already exists
+# Theme Toggle
+# -----------------------
+theme = st.radio("Select Theme:", ("Light 🌞", "Dark 🌙"))
+
+if theme == "Dark 🌙":
+    st.markdown("""
+        <style>
+        .reportview-container {
+            background-color: #0e1117;
+            color: #ffffff;
+        }
+        .stButton>button {
+            background-color: #1e2027;
+            color: #ffffff;
+        }
+        .stTextArea>div>div>textarea {
+            background-color: #1e2027;
+            color: #ffffff;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+else:
+    st.markdown("""
+        <style>
+        .reportview-container {
+            background-color: #ffffff;
+            color: #000000;
+        }
+        .stButton>button {
+            background-color: #f0f2f6;
+            color: #000000;
+        }
+        .stTextArea>div>div>textarea {
+            background-color: #ffffff;
+            color: #000000;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+# -----------------------
+# Page title & description
+# -----------------------
+st.title("📧 Spam Message Classifier")
+st.markdown("""
+Type a message or select an example below. The AI will predict instantly if it's **Spam** or **Not Spam**.
+""")
+
+# -----------------------
+# Load or train model
 # -----------------------
 if os.path.exists("spam_model.pkl") and os.path.exists("vectorizer.pkl"):
     model = joblib.load("spam_model.pkl")
     vectorizer = joblib.load("vectorizer.pkl")
 else:
-    # Load dataset
     data = pd.read_csv("spam.csv")
     data['label'] = data['label'].map({'ham': 0, 'spam': 1})
     data['message'] = data['message'].apply(clean_text)
 
-    # Split data
     X_train, X_test, y_train, y_test = train_test_split(
         data['message'], data['label'], test_size=0.2, random_state=42
     )
 
-    # Vectorize
     vectorizer = TfidfVectorizer()
     X_train_vec = vectorizer.fit_transform(X_train)
     X_test_vec = vectorizer.transform(X_test)
 
-    # Train model
     model = MultinomialNB()
     model.fit(X_train_vec, y_train)
 
-    # Save model and vectorizer
     joblib.dump(model, "spam_model.pkl")
     joblib.dump(vectorizer, "vectorizer.pkl")
 
-    # Show accuracy
     predictions = model.predict(X_test_vec)
-    st.write("Model Accuracy:", round(accuracy_score(y_test, predictions)*100, 2), "%")
+    st.info(f"Model Accuracy: {round(accuracy_score(y_test, predictions)*100, 2)}%")
 
 # -----------------------
-# User input for prediction
+# Layout: Columns
 # -----------------------
-user_message = st.text_area("✍️ Type your message here:")
+col1, col2 = st.columns([3, 1])
+
+with col1:
+    user_message = st.text_area("✍️ Type your message here:", height=150)
+
+with col2:
+    st.write("### Example Messages")
+    examples = [
+        "Win a free iPhone now!!!",
+        "Are you coming to class today?",
+        "Claim your free prize",
+        "Don't forget our meeting tomorrow",
+        "URGENT! You won cash reward"
+    ]
+    for msg in examples:
+        if st.button(msg):
+            st.session_state['user_message'] = msg
 
 # -----------------------
-# Predict button
+# Reactive message handling
 # -----------------------
-if st.button("Check Message"):
-    if user_message.strip() == "":
-        st.warning("Please enter a message.")
+if 'user_message' not in st.session_state:
+    st.session_state['user_message'] = user_message
+else:
+    if user_message != st.session_state['user_message']:
+        st.session_state['user_message'] = user_message
+
+# -----------------------
+# Auto-predict instantly
+# -----------------------
+if st.session_state['user_message'].strip() != "":
+    clean_message = clean_text(st.session_state['user_message'])
+    message_vec = vectorizer.transform([clean_message])
+    prediction = model.predict(message_vec)
+    probability = model.predict_proba(message_vec)[0]
+
+    if prediction[0] == 1:
+        st.error(f"🚨 SPAM! Probability: {round(probability[1]*100, 2)}%")
     else:
-        clean_message = clean_text(user_message)
-        message_vec = vectorizer.transform([clean_message])
-        prediction = model.predict(message_vec)
-
-        if prediction[0] == 1:
-            st.error("🚨 This message is SPAM")
-        else:
-            st.success("✅ This message is NOT spam")
+        st.success(f"✅ Not Spam. Probability: {round(probability[0]*100, 2)}%")
